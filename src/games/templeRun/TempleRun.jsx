@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Phaser from 'phaser';
 import { createGameConfig } from './game/config';
 import { EventBus } from './game/EventBus';
+import { LoadingScreen } from './hud/LoadingScreen';
 import { StartScreen } from './hud/StartScreen';
 import { Hud } from './hud/Hud';
+import { Countdown } from './hud/Countdown';
 import { GameOverScreen } from './hud/GameOverScreen';
 
 /**
@@ -17,6 +19,7 @@ export default function TempleRun({ onComplete }) {
   const gameRef = useRef(null);
 
   const [phase, setPhase] = useState('loading');
+  const [progress, setProgress] = useState(0);
   const [score, setScore] = useState(0);
   const [coins, setCoins] = useState(0);
   const [finalScore, setFinalScore] = useState(0);
@@ -27,6 +30,7 @@ export default function TempleRun({ onComplete }) {
     gameRef.current = game;
 
     const onReady = () => setPhase('ready');
+    const onProgress = (v) => setProgress(v);
     const onScore = (s) => setScore(s);
     const onCoins = (c) => setCoins(c);
     const onGameOver = (final) => {
@@ -36,12 +40,14 @@ export default function TempleRun({ onComplete }) {
     };
 
     EventBus.on('ready', onReady);
+    EventBus.on('load-progress', onProgress);
     EventBus.on('score-update', onScore);
     EventBus.on('coins-update', onCoins);
     EventBus.on('game-over', onGameOver);
 
     return () => {
       EventBus.off('ready', onReady);
+      EventBus.off('load-progress', onProgress);
       EventBus.off('score-update', onScore);
       EventBus.off('coins-update', onCoins);
       EventBus.off('game-over', onGameOver);
@@ -52,11 +58,19 @@ export default function TempleRun({ onComplete }) {
 
   // ---- phase actions -------------------------------------------------------
 
+  // Start tapped: reset HUD, show the 3·2·1 overlay and tell the scene to zoom
+  // in on the idling player. The run itself begins in onCountdownDone.
   const start = useCallback(() => {
     setScore(0);
     setCoins(0);
+    setPhase('countdown');
+    EventBus.emit('start-run');
+  }, []);
+
+  // Countdown finished: hide the overlay, begin the run.
+  const onCountdownDone = useCallback(() => {
     setPhase('running');
-    EventBus.emit('resume');
+    EventBus.emit('begin-run');
   }, []);
 
   const pause = useCallback(() => {
@@ -75,17 +89,18 @@ export default function TempleRun({ onComplete }) {
     });
   }, []);
 
+  // Retry: reset the scene to idle, then run the same countdown as a fresh start.
   const retry = useCallback(() => {
     setScore(0);
     setCoins(0);
-    setPhase('running');
     EventBus.emit('restart');
+    setPhase('countdown');
+    EventBus.emit('start-run');
   }, []);
 
   const restartToStart = useCallback(() => {
-    // From pause → back to Start screen (scene reset but idle).
+    // From pause → back to Start screen (scene reset, idle + animating).
     EventBus.emit('restart');
-    EventBus.emit('pause');
     setScore(0);
     setCoins(0);
     setPhase('ready');
@@ -117,13 +132,11 @@ export default function TempleRun({ onComplete }) {
       <div ref={containerRef} className="absolute inset-0" />
 
       {/* Loading */}
-      {phase === 'loading' && (
-        <div className="absolute inset-0 grid place-items-center text-hud text-ink-muted">
-          Loading…
-        </div>
-      )}
+      {phase === 'loading' && <LoadingScreen progress={progress} />}
 
       {phase === 'ready' && <StartScreen onStart={start} />}
+
+      {phase === 'countdown' && <Countdown onDone={onCountdownDone} />}
 
       {(phase === 'running' || phase === 'paused') && (
         <Hud score={score} coins={coins} onPause={pause} />

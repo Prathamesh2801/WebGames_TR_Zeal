@@ -1,4 +1,4 @@
-import { GAME } from '../constants';
+import { GAME } from "../constants";
 
 /**
  * Lane geometry + perspective helpers.
@@ -19,7 +19,8 @@ export class Lane {
     this.width = width;
     this.height = height;
     this.farY = height * GAME.SPAWN_Y;
-    this.nearY = height * GAME.PLAYER_Y;
+    this.playerYPos = height * GAME.PLAYER_Y;
+    this.nearY = height * GAME.ROAD_BOTTOM_Y;
     // Cap the play column on wide screens so the road stays a centered lane
     // strip (not a full-width triangle); the sky still fills the whole canvas.
     const playW = Math.min(width, GAME.MAX_PLAY_WIDTH);
@@ -33,14 +34,29 @@ export class Lane {
     return GAME.LANES_X.length;
   }
 
-  /** Near-row x for a lane index (where the player sits). */
+  /** Near-row (screen-bottom, t=1) x for a lane index. */
   laneX(lane) {
     return this.nearX[lane];
   }
 
   /** Player row y (constant). */
   get playerY() {
-    return this.nearY;
+    return this.playerYPos;
+  }
+
+  /** Depth t at the player's (constant) row. */
+  get playerDepth() {
+    return this.depthAt(this.playerYPos);
+  }
+
+  /**
+   * Perspective x for a lane AT the player's row. The player stands above the
+   * screen bottom (PLAYER_Y < ROAD_BOTTOM_Y), so it must ride the lane where the
+   * line actually is at that height — not the fully-spread near-row x. Obstacles
+   * already do this per-frame via xAt(lane, depthAt(y)); this matches them.
+   */
+  playerX(lane) {
+    return this.xAt(lane, this.playerDepth);
   }
 
   /** y position on screen for a given depth t (0 far → 1 near). */
@@ -56,8 +72,12 @@ export class Lane {
   /** Perspective x for a lane at depth t: converges toward center when far. */
   xAt(lane, t) {
     const trueX = this.nearX[lane];
-    // At t=0 (far) lanes sit closer to center; at t=1 they're at trueX.
-    return Phaser_lerp(this.centerX, trueX, t);
+
+    const farSpread = GAME.ROAD_HORIZON_SPREAD;
+
+    const farX = this.centerX + (trueX - this.centerX) * farSpread;
+
+    return Phaser_lerp(farX, trueX, t);
   }
 
   /** Scale for an item at depth t (SCALE_FAR → SCALE_NEAR). */

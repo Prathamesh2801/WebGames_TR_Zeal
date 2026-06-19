@@ -1,5 +1,6 @@
-import Phaser from 'phaser';
-import { GAME, TEXTURES } from '../constants';
+import Phaser from "phaser";
+import { GAME, TEXTURES, ANIMS } from "../constants";
+import { EventBus } from "../EventBus";
 
 /**
  * Where real art lives. Files go in /public, which Vite serves at the site
@@ -10,14 +11,42 @@ import { GAME, TEXTURES } from '../constants';
  * To animate the player or coin, change its entry from a string to a
  * { sheet, frameWidth, frameHeight } object (see loadAssets()).
  */
-const ASSET_BASE = '/assets/templeRun';
+const ASSET_BASE = "/assets/templeRun";
 const ASSET_FILES = {
-  [TEXTURES.PLAYER]: `${ASSET_BASE}/player.png`,
-  [TEXTURES.OBSTACLE]: `${ASSET_BASE}/obstacle.png`,
-  [TEXTURES.COIN]: `${ASSET_BASE}/coin.png`,
-  [TEXTURES.PARALLAX]: `${ASSET_BASE}/parallax.png`,
-  // Note: the road is drawn procedurally with perspective (see objects/Road.js),
-  // so there is no road.png to supply.
+  // Player animation sheets. Frame size = sheet size ÷ grid:
+  //   idle 1024×1024, 4×2 → 256×512 (8 frames)
+  //   run  2048×2048, 4×3 → 512×682 (12 frames)
+  //   dead 1024×1024, 3×3 → 341×341 (9 frames)
+  [TEXTURES.PLAYER_IDLE]: {
+    sheet: `${ASSET_BASE}/player_idle.png`,
+    frameWidth: 256,
+    frameHeight: 512,
+  },
+  [TEXTURES.PLAYER_RUN]: {
+    sheet: `${ASSET_BASE}/player_run.png`,
+    frameWidth: 512,
+    frameHeight: 682,
+  },
+  [TEXTURES.PLAYER_DEAD]: {
+    sheet: `${ASSET_BASE}/player_dead.png`,
+    frameWidth: 341,
+    frameHeight: 341,
+  },
+  // Obstacle art variants (chosen at random per spawn). The generated
+  // placeholder under TEXTURES.OBSTACLE stays as the pool's default texture.
+  [TEXTURES.OBSTACLE_1]: `${ASSET_BASE}/obstacle_1.png`,
+  [TEXTURES.OBSTACLE_2]: `${ASSET_BASE}/obstacle_2.png`,
+  [TEXTURES.OBSTACLE_3]: `${ASSET_BASE}/obstacle_3.png`,
+  // Coin spin sheet: 2400×950, 5×2 grid → 480×475 (10 frames).
+  [TEXTURES.COIN]: {
+    sheet: `${ASSET_BASE}/coin-sprite.png`,
+    frameWidth: 480,
+    frameHeight: 475,
+  },
+  // Path A backdrop: a single painted scene (sky + forest + road) used as a
+  // static cover background. The road + lane lines are baked into this art, so
+  // the procedural Road is disabled and Lane.js is tuned to match it.
+  [TEXTURES.PARALLAX]: `${ASSET_BASE}/parallax.jpeg`,
 };
 
 /**
@@ -28,10 +57,15 @@ const ASSET_FILES = {
  */
 export class BootScene extends Phaser.Scene {
   constructor() {
-    super('BootScene');
+    super("BootScene");
   }
 
   preload() {
+    // Drive the React loading bar from real loader progress (the video binary
+    // dominates the byte count, so this tracks the meaningful wait).
+    this.load.on(Phaser.Loader.Events.PROGRESS, (v) =>
+      EventBus.emit("load-progress", v),
+    );
     this.loadAssets();
   }
 
@@ -43,8 +77,61 @@ export class BootScene extends Phaser.Scene {
     if (!this.textures.exists(TEXTURES.COIN)) this.makeCoinTexture();
     if (!this.textures.exists(TEXTURES.PARALLAX)) this.makeParallaxTexture();
 
-    // RunScene emits 'ready' once its setup completes (spec §6).
-    this.scene.start('RunScene');
+    this.createPlayerAnims();
+    this.prepareBgVideo();
+
+    // RunScene emits 'ready' once its setup (incl. the video first frame)
+    // completes (spec §6).
+    this.scene.start("RunScene");
+  }
+
+  /**
+   * Turn the preloaded webm bytes into a Blob object URL for RunScene. Going via
+   * a blob: URL sidesteps Phaser's extension-based codec sniffing (which only
+   * recognizes VP8 .webm and rejects our VP9 clip) — the browser decodes it
+   * directly. Stored on the registry so RunScene can pick it up.
+   */
+  prepareBgVideo() {
+    if (!this.cache.binary.exists(TEXTURES.BG_VIDEO)) return;
+    try {
+      const data = this.cache.binary.get(TEXTURES.BG_VIDEO);
+      const blob = new Blob([data], { type: "video/webm" });
+      this.registry.set("bgVideoUrl", URL.createObjectURL(blob));
+    } catch {
+      // Leave bgVideoUrl unset → RunScene falls back to the static image.
+    }
+  }
+
+  /**
+   * Build the player idle/run/dead + coin-spin animations from whichever sheets
+   * loaded.
+   * Each is skipped if its sheet is missing (or only a 1-frame placeholder
+   * resolved), so the game still runs with the generated fallback (spec §9).
+   * Player.setAnimState() falls back to the static texture when an anim is gone.
+   */
+  createPlayerAnims() {
+    const defs = [
+      { tex: TEXTURES.PLAYER_IDLE, key: ANIMS.IDLE, fps: 8, repeat: -1 },
+      { tex: TEXTURES.PLAYER_RUN, key: ANIMS.RUN, fps: 16, repeat: -1 },
+      { tex: TEXTURES.PLAYER_DEAD, key: ANIMS.DEAD, fps: 12, repeat: 0 },
+      { tex: TEXTURES.COIN, key: ANIMS.COIN, fps: 14, repeat: -1 },
+    ];
+    for (const d of defs) {
+      if (!this.textures.exists(d.tex)) continue;
+      // frameTotal counts the cells plus the implicit __BASE frame.
+      const frameCount = this.textures.get(d.tex).frameTotal - 1;
+      if (frameCount < 2) continue;
+      if (this.anims.exists(d.key)) continue;
+      this.anims.create({
+        key: d.key,
+        frames: this.anims.generateFrameNumbers(d.tex, {
+          start: 0,
+          end: frameCount - 1,
+        }),
+        frameRate: d.fps,
+        repeat: d.repeat,
+      });
+    }
   }
 
   // ---- real-art loading ----------------------------------------------------
@@ -53,8 +140,13 @@ export class BootScene extends Phaser.Scene {
     // A missing file 404s; we swallow the loader error and fall back in create.
     this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, () => {});
 
+    // Looping video backdrop (Path A) — fetched as binary so we control the
+    // decode path (see prepareBgVideo). If it fails, RunScene falls back to the
+    // static parallax image, then to the generated placeholder.
+    this.load.binary(TEXTURES.BG_VIDEO, `${ASSET_BASE}/mainBg3.mp4`);
+
     for (const [key, entry] of Object.entries(ASSET_FILES)) {
-      if (typeof entry === 'string') {
+      if (typeof entry === "string") {
         this.load.image(key, entry);
       } else {
         // Sprite-sheet form: { sheet, frameWidth, frameHeight }.
@@ -115,22 +207,28 @@ export class BootScene extends Phaser.Scene {
     g.fillStyle(0xfde047, 1);
     for (let i = -1; i < 3; i++) {
       g.fillTriangle(
-        i * 22 + 8, h * 0.95,
-        i * 22 + 24, h * 0.55,
-        i * 22 + 30, h * 0.55,
+        i * 22 + 8,
+        h * 0.95,
+        i * 22 + 24,
+        h * 0.55,
+        i * 22 + 30,
+        h * 0.55,
       );
       g.fillTriangle(
-        i * 22 + 30, h * 0.55,
-        i * 22 + 14, h * 0.95,
-        i * 22 + 8, h * 0.95,
+        i * 22 + 30,
+        h * 0.55,
+        i * 22 + 14,
+        h * 0.95,
+        i * 22 + 8,
+        h * 0.95,
       );
     }
     g.generateTexture(TEXTURES.OBSTACLE, w, h);
     g.destroy();
   }
 
-  // Placeholder gold coin with rim, inner ring and shine. The spin is animated
-  // at runtime (scaleX) in RunScene. Replace with coin.png.
+  // Placeholder gold coin with rim, inner ring and shine. Static fallback when
+  // the coin-sprite.png spin sheet is unavailable. Replace with the sheet.
   makeCoinTexture() {
     const r = 18;
     const g = this.make.graphics({ x: 0, y: 0, add: false });
@@ -163,7 +261,7 @@ export class BootScene extends Phaser.Scene {
     for (let i = 0; i < 40; i++) {
       const x = (i * 97) % w;
       const y = (i * 53) % Math.floor(h * 0.6);
-      g.fillCircle(x, y, (i % 3) === 0 ? 1.6 : 1);
+      g.fillCircle(x, y, i % 3 === 0 ? 1.6 : 1);
     }
     g.generateTexture(TEXTURES.PARALLAX, w, h);
     g.destroy();
