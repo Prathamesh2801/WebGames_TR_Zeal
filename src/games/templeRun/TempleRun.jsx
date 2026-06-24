@@ -2,21 +2,26 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Phaser from 'phaser';
 import { createGameConfig } from './game/config';
 import { EventBus } from './game/EventBus';
+import { GAME } from './game/constants';
 import { LoadingScreen } from './hud/LoadingScreen';
 import { StartScreen } from './hud/StartScreen';
 import { Hud } from './hud/Hud';
 import { Countdown } from './hud/Countdown';
+import { TutorialHints } from './hud/TutorialHints';
 import { GameOverScreen } from './hud/GameOverScreen';
 
 /**
  * Mounts the Phaser game and owns the phase state machine + EventBus wiring
  * (spec §4, §8). React owns all screens/overlays; Phaser owns the canvas.
  *
- * Phases: loading → ready → running ⇄ paused, running → over.
+ * Phases: loading → ready → countdown → tutorial → running ⇄ paused, running → over.
  */
 export default function TempleRun({ onComplete }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
+  // The control tutorial plays once per session (after the first Start), then
+  // retries skip straight from the countdown into the run.
+  const tutorialShownRef = useRef(false);
 
   const [phase, setPhase] = useState('loading');
   const [progress, setProgress] = useState(0);
@@ -67,8 +72,22 @@ export default function TempleRun({ onComplete }) {
     EventBus.emit('start-run');
   }, []);
 
-  // Countdown finished: hide the overlay, begin the run.
+  // Countdown finished. First time this session: enter the no-spawn tutorial so
+  // the player can learn the controls (skipped if TUTORIAL_MS is 0). Afterwards
+  // (retries), go straight into the run.
   const onCountdownDone = useCallback(() => {
+    if (!tutorialShownRef.current && GAME.TUTORIAL_MS > 0) {
+      tutorialShownRef.current = true;
+      setPhase('tutorial');
+      EventBus.emit('begin-tutorial');
+    } else {
+      setPhase('running');
+      EventBus.emit('begin-run');
+    }
+  }, []);
+
+  // Tutorial window elapsed: hide the hints and start the real run (spawns on).
+  const onTutorialDone = useCallback(() => {
     setPhase('running');
     EventBus.emit('begin-run');
   }, []);
@@ -127,33 +146,49 @@ export default function TempleRun({ onComplete }) {
   }, []);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-surface select-none">
-      {/* Phaser canvas parent */}
-      <div ref={containerRef} className="absolute inset-0" />
+    // Letterbox backdrop: the game lives in a centered, max-width 9:16 column so
+    // the portrait (mobile) video is shown in full — never cover-cropped — and
+    // desktop plays as a centered phone column with bars on the sides.
+    <div className="relative grid h-full w-full place-items-center overflow-hidden bg-black select-none">
+      <div
+        className="relative overflow-hidden bg-surface"
+        style={{
+          // Fill the screen height (no letterbox on tall phones) with a width
+          // capped at 480px so desktop is a centered phone column. The video
+          // cover-fills this box; lanes are pinned to the video (see Lane.js).
+          height: '100%',
+          width: 'min(100%, 480px)',
+        }}
+      >
+        {/* Phaser canvas parent (canvas = this 9:16 column) */}
+        <div ref={containerRef} className="absolute inset-0" />
 
-      {/* Loading */}
-      {phase === 'loading' && <LoadingScreen progress={progress} />}
+        {/* Loading */}
+        {phase === 'loading' && <LoadingScreen progress={progress} />}
 
-      {phase === 'ready' && <StartScreen onStart={start} />}
+        {phase === 'ready' && <StartScreen onStart={start} />}
 
-      {phase === 'countdown' && <Countdown onDone={onCountdownDone} />}
+        {phase === 'countdown' && <Countdown onDone={onCountdownDone} />}
 
-      {(phase === 'running' || phase === 'paused') && (
-        <Hud score={score} coins={coins} onPause={pause} />
-      )}
+        {phase === 'tutorial' && <TutorialHints onDone={onTutorialDone} />}
 
-      {phase === 'paused' && (
-        <GameOverScreen
-          paused
-          score={score + coins * 10}
-          onResume={resume}
-          onRestart={restartToStart}
-        />
-      )}
+        {(phase === 'tutorial' || phase === 'running' || phase === 'paused') && (
+          <Hud score={score} coins={coins} onPause={pause} />
+        )}
 
-      {phase === 'over' && (
-        <GameOverScreen score={finalScore} onRetry={retry} onExit={() => onComplete?.(finalScore)} />
-      )}
+        {phase === 'paused' && (
+          <GameOverScreen
+            paused
+            score={score + coins * 10}
+            onResume={resume}
+            onRestart={restartToStart}
+          />
+        )}
+
+        {phase === 'over' && (
+          <GameOverScreen score={finalScore} onRetry={retry} onExit={() => onComplete?.(finalScore)} />
+        )}
+      </div>
     </div>
   );
 }

@@ -3,14 +3,41 @@ import { GAME } from "../constants";
 /**
  * Lane geometry + perspective helpers.
  *
+ * The road is a trapezoid calibrated from the backdrop frame (GAME.ROAD): a
+ * single vanishing point at the horizon and the near road edges at the bottom.
+ * All values are fractions of the SOURCE video frame and are mapped to screen
+ * pixels through the EXACT same cover-fit the backdrop uses (same source
+ * dimensions, same max() scale, centered) — so the lanes, player, obstacles and
+ * coins stay locked to the filmed path on any screen aspect.
+ *
  * Depth is a normalized value t: 0 = far (vanishing point, top) → 1 = near
- * (player row, bottom). As items approach (t: 0→1) they move down the screen,
- * spread out toward their true lane x, and scale up — faking 2.5D depth.
+ * (player/bottom row). As items approach (t: 0→1) they move down the screen,
+ * fan out from the vanishing column toward their true lane x, and scale up.
  */
 export class Lane {
   constructor(scene) {
     this.scene = scene;
+    // Source frame size for the cover-fit. Defaults to the known video size;
+    // RunScene calls setSource() with the live video/image dimensions once they
+    // decode so this transform matches the rendered backdrop byte-for-byte.
+    this.srcW = GAME.VIDEO_SRC_W;
+    this.srcH = GAME.VIDEO_SRC_H;
     this.recompute();
+  }
+
+  /**
+   * Update the cover-fit source size to the live backdrop's. Returns true and
+   * recomputes if the size actually changed (so callers can skip redundant
+   * redraws). Falls back to the known video size when given nothing.
+   */
+  setSource(w, h) {
+    const nw = w || GAME.VIDEO_SRC_W;
+    const nh = h || GAME.VIDEO_SRC_H;
+    if (nw === this.srcW && nh === this.srcH) return false;
+    this.srcW = nw;
+    this.srcH = nh;
+    this.recompute();
+    return true;
   }
 
   /** Recompute cached pixel positions; call on resize. */
@@ -18,21 +45,42 @@ export class Lane {
     const { width, height } = this.scene.scale.gameSize;
     this.width = width;
     this.height = height;
-    this.farY = height * GAME.SPAWN_Y;
-    this.playerYPos = height * GAME.PLAYER_Y;
-    this.nearY = height * GAME.ROAD_BOTTOM_Y;
-    // Cap the play column on wide screens so the road stays a centered lane
-    // strip (not a full-width triangle); the sky still fills the whole canvas.
-    const playW = Math.min(width, GAME.MAX_PLAY_WIDTH);
-    this.playW = playW;
-    const offsetX = (width - playW) / 2;
-    // True (near) lane x positions in pixels, within the centered column.
-    this.nearX = GAME.LANES_X.map((f) => offsetX + f * playW);
-    this.centerX = offsetX + playW * 0.5;
+    // Cover-fit: scale the source frame to fill the canvas, centered, overflow
+    // cropped — identical to RunScene.fitBackground. dispW/dispH are its
+    // on-screen size; video fractions map through this so they track the frame.
+    const scale = Math.max(width / this.srcW, height / this.srcH);
+    this.dispW = this.srcW * scale;
+    this.dispH = this.srcH * scale;
+
+    const R = GAME.ROAD;
+    // Vanishing point + near road edges, in screen pixels.
+    this.vanishX = this.vidToScreenX(R.VANISH_X);
+    this.farY = this.vidToScreenY(R.VANISH_Y); // far row = the vanishing row
+    this.nearY = this.vidToScreenY(R.NEAR_Y);
+    this.playerYPos = this.vidToScreenY(GAME.PLAYER_Y);
+    // Near-row lane centers, evenly spaced across the road width.
+    const nearL = this.vidToScreenX(R.NEAR_LEFT);
+    const nearR = this.vidToScreenX(R.NEAR_RIGHT);
+    const n = R.LANES;
+    this.nearX = [];
+    for (let i = 0; i < n; i++) {
+      this.nearX.push(nearL + ((i + 0.5) / n) * (nearR - nearL));
+    }
+    this.centerX = this.vanishX; // the road's vanishing-point column
+  }
+
+  /** Map a video-width fraction (0..1) to a screen x under the cover-fit. */
+  vidToScreenX(fx) {
+    return this.width / 2 + (fx - 0.5) * this.dispW;
+  }
+
+  /** Map a video-height fraction (0..1) to a screen y under the cover-fit. */
+  vidToScreenY(fy) {
+    return this.height / 2 + (fy - 0.5) * this.dispH;
   }
 
   get count() {
-    return GAME.LANES_X.length;
+    return GAME.ROAD.LANES;
   }
 
   /** Near-row (screen-bottom, t=1) x for a lane index. */
@@ -52,8 +100,8 @@ export class Lane {
 
   /**
    * Perspective x for a lane AT the player's row. The player stands above the
-   * screen bottom (PLAYER_Y < ROAD_BOTTOM_Y), so it must ride the lane where the
-   * line actually is at that height — not the fully-spread near-row x. Obstacles
+   * screen bottom (PLAYER_Y < NEAR_Y), so it must ride the lane where the line
+   * actually is at that height — not the fully-spread near-row x. Obstacles
    * already do this per-frame via xAt(lane, depthAt(y)); this matches them.
    */
   playerX(lane) {
@@ -70,27 +118,13 @@ export class Lane {
     return (y - this.farY) / (this.nearY - this.farY);
   }
 
-  /** Perspective x for a lane at depth t: converges toward center when far. */
-  xAt(lane, t) {
-    const trueX = this.nearX[lane];
-
-    const farSpread = GAME.ROAD_HORIZON_SPREAD;
-
-    const farX = this.centerX + (trueX - this.centerX) * farSpread;
-
-    return Phaser_lerp(farX, trueX, t);
-  }
-
   /**
-   * Perspective x for a road-side prop (haveli) at depth t. side: -1 left, +1
-   * right. The prop's inner edge rides the road's diagonal shoulder — converging
-   * to the vanishing point when far, spreading to the road edge when near — so
-   * buildings fill the empty triangles beside the road as they stream past.
+   * Perspective x for a lane at depth t. Every lane lerps from the shared
+   * vanishing column (t=0) out to its near-row center (t=1), so the lanes form
+   * the road's trapezoid and converge to a single point at the horizon.
    */
-  sideX(side, t) {
-    const nearX = this.centerX + side * this.playW * GAME.HAVELI_INNER_X;
-    const farX = this.centerX + (nearX - this.centerX) * GAME.ROAD_HORIZON_SPREAD;
-    return Phaser_lerp(farX, nearX, t);
+  xAt(lane, t) {
+    return Phaser_lerp(this.vanishX, this.nearX[lane], t);
   }
 
   /** Scale for an item at depth t (SCALE_FAR → SCALE_NEAR). */

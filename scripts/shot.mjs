@@ -4,7 +4,9 @@ const OUT = 'scripts/shots';
 const URL = 'http://localhost:5174/';
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 412, height: 810 }, deviceScaleFactor: 2 });
+const VW = Number(process.env.VW || 412);
+const VH = Number(process.env.VH || 810);
+const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: 2 });
 
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });

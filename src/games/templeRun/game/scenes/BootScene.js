@@ -16,6 +16,7 @@ const ASSET_FILES = {
   // Player animation sheets. Frame size = sheet size ÷ grid:
   //   idle 1024×1024, 4×2 → 256×512 (8 frames)
   //   run  2048×2048, 4×3 → 512×682 (12 frames)
+  //   jump 1024×1024, 4×2 → 256×512 (8 frames)
   //   dead 1024×1024, 3×3 → 341×341 (9 frames)
   [TEXTURES.PLAYER_IDLE]: {
     sheet: `${ASSET_BASE}/player_idle.png`,
@@ -27,6 +28,11 @@ const ASSET_FILES = {
     frameWidth: 512,
     frameHeight: 682,
   },
+  [TEXTURES.PLAYER_JUMP]: {
+    sheet: `${ASSET_BASE}/player_jump.png`,
+    frameWidth: 256,
+    frameHeight: 512,
+  },
   [TEXTURES.PLAYER_DEAD]: {
     sheet: `${ASSET_BASE}/player_dead.png`,
     frameWidth: 341,
@@ -37,29 +43,13 @@ const ASSET_FILES = {
   [TEXTURES.OBSTACLE_1]: `${ASSET_BASE}/obstacle_1.png`,
   [TEXTURES.OBSTACLE_2]: `${ASSET_BASE}/obstacle_2.png`,
   [TEXTURES.OBSTACLE_3]: `${ASSET_BASE}/obstacle_3.png`,
-  // Udaipur gateway scenery prop (transparent PNG). Missing → no arches spawn.
-  [TEXTURES.ARCH]: `${ASSET_BASE}/arch2.png`,
-  // Side-scenery props (transparent PNGs): havelis + natural terrain, picked at
-  // random per spawn. Any missing variant drops out of the rotation.
-  [TEXTURES.HAVELI]: `${ASSET_BASE}/haveli.png`,
-  [TEXTURES.HAVELI_2]: `${ASSET_BASE}/haveli2.png`,
-  [TEXTURES.TREE]: `${ASSET_BASE}/tree.png`,
-  [TEXTURES.PALM]: `${ASSET_BASE}/palm.png`,
-  [TEXTURES.BUSH]: `${ASSET_BASE}/bush.png`,
-  [TEXTURES.SKYLINE]: `${ASSET_BASE}/skyline.png`,
-  [TEXTURES.WING_L]: `${ASSET_BASE}/wingL.png`,
-  // To add a dedicated right wall, drop wingR.png in and uncomment:
-  // [TEXTURES.WING_R]: `${ASSET_BASE}/wingR.png`,
-  // (until then the right side mirrors wingL — see RunScene.useProceduralBackground)
   // Coin spin sheet: 2400×950, 5×2 grid → 480×475 (10 frames).
   [TEXTURES.COIN]: {
     sheet: `${ASSET_BASE}/coin-sprite.png`,
     frameWidth: 480,
     frameHeight: 475,
   },
-  // Path A backdrop: a single painted scene (sky + forest + road) used as a
-  // static cover background. The road + lane lines are baked into this art, so
-  // the procedural Road is disabled and Lane.js is tuned to match it.
+  // Static image fallback used only if the video backdrop fails to load.
   [TEXTURES.PARALLAX]: `${ASSET_BASE}/parallax.jpeg`,
 };
 
@@ -127,6 +117,9 @@ export class BootScene extends Phaser.Scene {
     const defs = [
       { tex: TEXTURES.PLAYER_IDLE, key: ANIMS.IDLE, fps: 8, repeat: -1 },
       { tex: TEXTURES.PLAYER_RUN, key: ANIMS.RUN, fps: 16, repeat: -1 },
+      // 8 frames at 12 fps ≈ 667ms, kept close to GAME.JUMP_DURATION so the
+      // landing frame lands as the player touches down.
+      { tex: TEXTURES.PLAYER_JUMP, key: ANIMS.JUMP, fps: 12, repeat: 0 },
       { tex: TEXTURES.PLAYER_DEAD, key: ANIMS.DEAD, fps: 12, repeat: 0 },
       { tex: TEXTURES.COIN, key: ANIMS.COIN, fps: 14, repeat: -1 },
     ];

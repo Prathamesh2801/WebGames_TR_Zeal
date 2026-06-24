@@ -24,7 +24,8 @@ export function StartScreen({ onStart }) {
           Temple Run
         </h1>
         <p className="mt-4 text-sm text-ink-muted">
-          Swipe or use ← → / A D to switch lanes. Grab coins, dodge obstacles.
+          Swipe left / right (or ← → / A D) to switch lanes. Swipe up (or ↑ / W /
+          Space) to jump over obstacles. Grab coins, dodge everything else.
         </p>
         <button
           type="button"
