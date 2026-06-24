@@ -1,4 +1,4 @@
-import { GAME } from '../constants';
+import { GAME } from "../constants";
 
 /**
  * Data-driven level settings. v1 ships a single level; later levels are
@@ -7,8 +7,8 @@ import { GAME } from '../constants';
  */
 export const LEVELS = {
   udaipur: {
-    id: 'udaipur',
-    name: 'City Palace Run',
+    id: "udaipur",
+    name: "City Palace Run",
     themeColor: 0x1e1b3a, // road base tint
     accentColor: 0xffc44d, // lane lines / accents
     startSpeed: GAME.START_SPEED,
@@ -19,7 +19,7 @@ export const LEVELS = {
   },
 };
 
-export const DEFAULT_LEVEL = 'udaipur';
+export const DEFAULT_LEVEL = "udaipur";
 
 export function getLevel(id = DEFAULT_LEVEL) {
   return LEVELS[id] ?? LEVELS[DEFAULT_LEVEL];

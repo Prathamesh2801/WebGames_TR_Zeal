@@ -24,6 +24,7 @@ export class Lane {
     // Cap the play column on wide screens so the road stays a centered lane
     // strip (not a full-width triangle); the sky still fills the whole canvas.
     const playW = Math.min(width, GAME.MAX_PLAY_WIDTH);
+    this.playW = playW;
     const offsetX = (width - playW) / 2;
     // True (near) lane x positions in pixels, within the centered column.
     this.nearX = GAME.LANES_X.map((f) => offsetX + f * playW);
@@ -78,6 +79,18 @@ export class Lane {
     const farX = this.centerX + (trueX - this.centerX) * farSpread;
 
     return Phaser_lerp(farX, trueX, t);
+  }
+
+  /**
+   * Perspective x for a road-side prop (haveli) at depth t. side: -1 left, +1
+   * right. The prop's inner edge rides the road's diagonal shoulder — converging
+   * to the vanishing point when far, spreading to the road edge when near — so
+   * buildings fill the empty triangles beside the road as they stream past.
+   */
+  sideX(side, t) {
+    const nearX = this.centerX + side * this.playW * GAME.HAVELI_INNER_X;
+    const farX = this.centerX + (nearX - this.centerX) * GAME.ROAD_HORIZON_SPREAD;
+    return Phaser_lerp(farX, nearX, t);
   }
 
   /** Scale for an item at depth t (SCALE_FAR → SCALE_NEAR). */

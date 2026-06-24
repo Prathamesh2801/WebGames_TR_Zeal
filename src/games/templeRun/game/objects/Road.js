@@ -41,6 +41,35 @@ export class Road {
     return farX + (nearX - farX) * t;
   }
 
+  /** Fill a perspective trapezoid strip between two near-row x edges. */
+  fillBand(nearXL, nearXR, color, alpha = 1) {
+    const g = this.g;
+    const yFar = this.lane.yAt(0);
+    const yNear = this.lane.yAt(1);
+    g.fillStyle(color, alpha);
+    g.beginPath();
+    g.moveTo(this.edgeX(nearXL, 0), yFar);
+    g.lineTo(this.edgeX(nearXR, 0), yFar);
+    g.lineTo(this.edgeX(nearXR, 1), yNear);
+    g.lineTo(this.edgeX(nearXL, 1), yNear);
+    g.closePath();
+    g.fillPath();
+  }
+
+  /** A little clump of dry-grass blades at (x,y), sized by scale s. */
+  drawTuft(x, y, s) {
+    const g = this.g;
+    const h = 11 * s;
+    const w = 2.6 * s;
+    g.fillStyle(0x6f7a3a, 1); // shadowed blades
+    g.fillTriangle(x - 3 * w, y, x - 4.4 * w, y - h * 0.7, x - w, y);
+    g.fillTriangle(x + 3 * w, y, x + 4.4 * w, y - h * 0.7, x + w, y);
+    g.fillStyle(0x8c9a48, 1); // lit center blades
+    g.fillTriangle(x, y, x - w, y - h, x + w, y);
+    g.fillTriangle(x - 2 * w, y, x - 3 * w, y - h * 0.85, x, y);
+    g.fillTriangle(x + 2 * w, y, x + 3 * w, y - h * 0.85, x, y);
+  }
+
   draw() {
     const lane = this.lane;
     const g = this.g;
@@ -50,25 +79,10 @@ export class Road {
     const margin = spacing * GAME.ROAD_RAIL_MARGIN; // rail offset past outer lanes
     const leftNear = lane.nearX[0] - margin;
     const rightNear = lane.nearX[lane.nearX.length - 1] + margin;
-    const yFar = lane.yAt(0);
-    const yNear = lane.yAt(1);
 
-    // Ground trapezoid. In overlay (calibration) mode this is skipped so the
-    // road painted into the video shows through for comparison.
-    if (!this.overlay) {
-      g.fillStyle(0x241f47, 1);
-      g.beginPath();
-      g.moveTo(this.edgeX(leftNear, 0), yFar);
-      g.lineTo(this.edgeX(rightNear, 0), yFar);
-      g.lineTo(this.edgeX(rightNear, 1), yNear);
-      g.lineTo(this.edgeX(leftNear, 1), yNear);
-      g.closePath();
-      g.fillPath();
-    } else {
-      // Calibration guides: a solid bright center line per lane from the far
-      // vanishing point to the player row, so the 3 code lanes are visible
-      // against the video's painted road. Edit GAME.LANES_X / SPAWN_Y /
-      // ROAD_HORIZON_SPREAD until these track the painted lanes.
+    // Calibration mode: skip the ground fill and draw bright lane guides ABOVE
+    // the video so the code lanes can be eyeballed against the painted road.
+    if (this.overlay) {
       const colors = [0x00e5ff, 0x39ff14, 0xff2d95]; // L / center / R
       const STEPS = 24;
       for (let li = 0; li < lane.nearX.length; li++) {
@@ -81,41 +95,26 @@ export class Road {
         }
         g.strokePath();
       }
+      return;
     }
 
-    // Side rails (converging to the vanishing point).
-    g.lineStyle(6, 0x4338ca, this.overlay ? 0.7 : 0.9);
-    g.lineBetween(
-      this.edgeX(leftNear, 0),
-      yFar,
-      this.edgeX(leftNear, 1),
-      yNear,
-    );
-    g.lineBetween(
-      this.edgeX(rightNear, 0),
-      yFar,
-      this.edgeX(rightNear, 1),
-      yNear,
-    );
+    // Dry-grass verges flanking the path, then the worn-earth path on top.
+    const vergeW = spacing * 0.7;
+    this.fillBand(leftNear - vergeW, leftNear, 0x83904a); // left grass
+    this.fillBand(rightNear, rightNear + vergeW, 0x83904a); // right grass
+    this.fillBand(leftNear, rightNear, 0x9c8763); // worn-earth path
 
-    // Dashed lane dividers between each pair of lanes.
+    // Natural lane dividers: two lines of dry-grass tufts marching toward the
+    // camera (also the speed cue — they grow + speed up with depth).
     const dividers = [];
     for (let i = 0; i < lane.nearX.length - 1; i++) {
       dividers.push((lane.nearX[i] + lane.nearX[i + 1]) / 2);
     }
-    const DASHES = 8;
+    const TUFTS = 7;
     for (const nx of dividers) {
-      for (let i = 0; i < DASHES; i++) {
-        const t = (i / DASHES + this.phase) % 1; // 0 far → 1 near
-        const t2 = Math.min(1, t + 0.55 / DASHES);
-        // Far dashes are thin + faint; near dashes thick + bright (depth cue).
-        g.lineStyle(2 + 6 * t, 0xffc44d, 0.15 + 0.55 * t);
-        g.lineBetween(
-          this.edgeX(nx, t),
-          lane.yAt(t),
-          this.edgeX(nx, t2),
-          lane.yAt(t2),
-        );
+      for (let i = 0; i < TUFTS; i++) {
+        const t = (i / TUFTS + this.phase) % 1; // 0 far → 1 near
+        this.drawTuft(this.edgeX(nx, t), lane.yAt(t), 0.5 + 2.3 * t);
       }
     }
   }

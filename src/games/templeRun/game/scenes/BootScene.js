@@ -37,6 +37,20 @@ const ASSET_FILES = {
   [TEXTURES.OBSTACLE_1]: `${ASSET_BASE}/obstacle_1.png`,
   [TEXTURES.OBSTACLE_2]: `${ASSET_BASE}/obstacle_2.png`,
   [TEXTURES.OBSTACLE_3]: `${ASSET_BASE}/obstacle_3.png`,
+  // Udaipur gateway scenery prop (transparent PNG). Missing → no arches spawn.
+  [TEXTURES.ARCH]: `${ASSET_BASE}/arch2.png`,
+  // Side-scenery props (transparent PNGs): havelis + natural terrain, picked at
+  // random per spawn. Any missing variant drops out of the rotation.
+  [TEXTURES.HAVELI]: `${ASSET_BASE}/haveli.png`,
+  [TEXTURES.HAVELI_2]: `${ASSET_BASE}/haveli2.png`,
+  [TEXTURES.TREE]: `${ASSET_BASE}/tree.png`,
+  [TEXTURES.PALM]: `${ASSET_BASE}/palm.png`,
+  [TEXTURES.BUSH]: `${ASSET_BASE}/bush.png`,
+  [TEXTURES.SKYLINE]: `${ASSET_BASE}/skyline.png`,
+  [TEXTURES.WING_L]: `${ASSET_BASE}/wingL.png`,
+  // To add a dedicated right wall, drop wingR.png in and uncomment:
+  // [TEXTURES.WING_R]: `${ASSET_BASE}/wingR.png`,
+  // (until then the right side mirrors wingL — see RunScene.useProceduralBackground)
   // Coin spin sheet: 2400×950, 5×2 grid → 480×475 (10 frames).
   [TEXTURES.COIN]: {
     sheet: `${ASSET_BASE}/coin-sprite.png`,
@@ -143,7 +157,7 @@ export class BootScene extends Phaser.Scene {
     // Looping video backdrop (Path A) — fetched as binary so we control the
     // decode path (see prepareBgVideo). If it fails, RunScene falls back to the
     // static parallax image, then to the generated placeholder.
-    this.load.binary(TEXTURES.BG_VIDEO, `${ASSET_BASE}/mainBg3.mp4`);
+    this.load.binary(TEXTURES.BG_VIDEO, `${ASSET_BASE}/videos/temple_run_loop.webm`);
 
     for (const [key, entry] of Object.entries(ASSET_FILES)) {
       if (typeof entry === "string") {
